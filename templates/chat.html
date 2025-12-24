@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>数字信封演示 - Chat</title>
+  <style>
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial;background:#0b1020;color:#e8ecff}
+    header{padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.08);display:flex;gap:12px;align-items:center}
+    header .tag{font-size:12px;color:#aab3ff;background:rgba(170,179,255,.12);padding:4px 8px;border-radius:999px}
+    main{max-width:980px;margin:0 auto;display:grid;grid-template-columns:1fr 320px;gap:14px;padding:14px}
+    .card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.09);border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+    .chat{display:flex;flex-direction:column;height:74vh;overflow:hidden}
+    .msgs{padding:14px;overflow:auto;display:flex;flex-direction:column;gap:10px}
+    .bubble{max-width:72%;padding:10px 12px;border-radius:14px;line-height:1.35;white-space:pre-wrap;word-break:break-word}
+    .me{align-self:flex-end;background:rgba(92,255,197,.14);border:1px solid rgba(92,255,197,.18)}
+    .srv{align-self:flex-start;background:rgba(122,169,255,.14);border:1px solid rgba(122,169,255,.18)}
+    .meta{font-size:12px;color:#b8c0ff;margin-top:6px;opacity:.85}
+    .inputbar{display:flex;gap:10px;padding:12px;border-top:1px solid rgba(255,255,255,.08)}
+    textarea{flex:1;resize:none;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:rgba(0,0,0,.25);color:#e8ecff;padding:10px;min-height:42px;max-height:120px}
+    button{border:0;border-radius:12px;padding:10px 14px;background:#6aa8ff;color:#051024;font-weight:700;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    .side{padding:14px}
+    .kv{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px;color:#d8ddff}
+    .kv code{color:#aab3ff}
+    .hint{font-size:12px;color:#b8c0ff;opacity:.9;line-height:1.5;margin-top:10px}
+    a{color:#9ad0ff}
+  </style>
+</head>
+<body>
+<header>
+  <div style="font-weight:800;font-size:16px">数字信封演示</div>
+  <div class="tag">Chat UI</div>
+  <div style="margin-left:auto;font-size:12px;color:#b8c0ff">
+    入口：<code id="origin"></code>
+  </div>
+</header>
+
+<main>
+  <section class="card chat">
+    <div class="msgs" id="msgs"></div>
+
+    <div class="inputbar">
+      <textarea id="text" placeholder="输入消息（将作为 HTTP body 经过 ProxyA↔ProxyB 加密隧道转发）"></textarea>
+      <button id="send">发送</button>
+    </div>
+  </section>
+
+  <aside class="card side">
+    <div style="font-weight:800;margin-bottom:10px">本次请求信息</div>
+    <div class="kv"><span>HTTP 路径</span><code>/echo</code></div>
+    <div class="kv"><span>响应耗时</span><code id="lat">-</code></div>
+    <div class="kv"><span>后端时间戳 ts</span><code id="ts">-</code></div>
+    <div class="kv"><span>回显 body_text</span><code id="body">-</code></div>
+
+    <div class="hint">
+      用于验收对比：
+      <ul>
+        <li>Burp 抓 <b>客户端→服务器</b>：可看到明文请求。</li>
+        <li>服务器 tcpdump 抓 <b>19000 /tunnel</b>：只看到 envelope（ciphertext/ek/tag），看不到明文。</li>
+      </ul>
+      你也可以用明显特征串测试：<code>THIS_IS_SECRET_123</code>
+    </div>
+  </aside>
+</main>
+
+<script>
+  const $ = (id)=>document.getElementById(id);
+  $("origin").textContent = location.origin;
+
+  function addBubble(kind, text, meta="") {
+    const wrap = document.createElement("div");
+    const b = document.createElement("div");
+    b.className = "bubble " + (kind==="me" ? "me" : "srv");
+    b.textContent = text;
+
+    wrap.appendChild(b);
+    if (meta) {
+      const m = document.createElement("div");
+      m.className = "meta";
+      m.textContent = meta;
+      wrap.appendChild(m);
+    }
+    $("msgs").appendChild(wrap);
+    $("msgs").scrollTop = $("msgs").scrollHeight;
+  }
+
+  async function send() {
+    const msg = $("text").value;
+    if (!msg.trim()) return;
+
+    $("send").disabled = true;
+    addBubble("me", msg);
+
+    const t0 = performance.now();
+    try {
+      const r = await fetch("/echo", {
+        method: "POST",
+        headers: { "Content-Type": "text/plain; charset=utf-8" },
+        body: msg
+      });
+      const data = await r.json();
+      const t1 = performance.now();
+
+      $("lat").textContent = (t1 - t0).toFixed(1) + " ms";
+      $("ts").textContent = data.ts ?? "-";
+      $("body").textContent = JSON.stringify(data.body_text ?? "", null, 0);
+
+      addBubble("srv", data.body_text ?? "(no body_text)", `status=${r.status}  ts=${data.ts ?? "-"}`);
+    } catch (e) {
+      addBubble("srv", "请求失败：" + e);
+    } finally {
+      $("send").disabled = false;
+      $("text").value = "";
+      $("text").focus();
+    }
+  }
+
+  $("send").addEventListener("click", send);
+  $("text").addEventListener("keydown", (e)=>{
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
+  });
+
+  addBubble("srv", "你好！输入内容后发送。你会在客户端看到明文回显，但在 A↔B 链路抓包只会看到 ciphertext。");
+</script>
+</body>
+</html>

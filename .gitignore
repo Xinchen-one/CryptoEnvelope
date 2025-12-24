@@ -1,0 +1,20 @@
+# 忽略所有 RSA 私钥和公钥文件，防止泄露 
+keys/*.pem
+
+# 忽略日志文件夹，防止明文摘要上传
+logs/
+
+# 忽略 Python 自动生成的缓存文件
+__pycache__/
+*.pyc
+
+# 忽略虚拟环境文件夹
+.venv/
+venv/
+
+# 忽略命令解释文件
+commond.txt
+
+# 操作系统临时文件
+.DS_Store
+Thumbs.db

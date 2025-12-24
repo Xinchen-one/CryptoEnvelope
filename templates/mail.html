@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureMail - 数字化信封系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .active-nav { border-left: 4px solid #3b82f6; background: #eff6ff; }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex overflow-hidden">
+
+    <div class="w-64 bg-white border-r flex flex-col">
+        <div class="p-6 text-xl font-bold text-blue-600 border-b">SecureMail</div>
+        <nav class="flex-1 mt-4">
+            <a href="#" onclick="showSection('inbox')" id="nav-inbox" class="active-nav block px-6 py-3 text-gray-700 hover:bg-gray-100">收件箱</a>
+            <a href="#" onclick="showSection('compose')" id="nav-compose" class="block px-6 py-3 text-gray-700 hover:bg-gray-100">写邮件</a>
+            <a href="#" onclick="showSection('status')" id="nav-status" class="block px-6 py-3 text-gray-700 hover:bg-gray-100">系统状态</a>
+        </nav>
+    </div>
+
+    <div class="flex-1 flex flex-col">
+        <header class="h-16 bg-white border-b flex items-center justify-between px-8">
+            <h2 id="section-title" class="text-lg font-semibold text-gray-800">收件箱</h2>
+            <span id="conn-status" class="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">隧道已连接</span>
+        </header>
+
+        <main class="flex-1 p-8 overflow-y-auto">
+            <section id="section-inbox" class="">
+                <div class="bg-white shadow rounded-lg">
+                    <table class="min-w-full">
+                        <thead class="bg-gray-50 border-b">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">发件人</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">主题</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mail-list" class="divide-y divide-gray-200">
+                            <tr class="hover:bg-gray-50 cursor-pointer">
+                                <td class="px-6 py-4 font-medium">System Admin</td>
+                                <td class="px-6 py-4">欢迎使用 RSA+AES 数字信封邮件系统</td>
+                                <td class="px-6 py-4 text-sm text-gray-500">刚刚</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="section-compose" class="hidden">
+                <div class="max-w-2xl bg-white p-6 shadow rounded-lg">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">收件人</label>
+                        <input type="text" id="mail-to" class="mt-1 block w-full border border-gray-300 rounded-md p-2" placeholder="user@example.com">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">主题</label>
+                        <input type="text" id="mail-subject" class="mt-1 block w-full border border-gray-300 rounded-md p-2">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700">正文 (将通过隧道加密)</label>
+                        <textarea id="mail-body" rows="6" class="mt-1 block w-full border border-gray-300 rounded-md p-2"></textarea>
+                    </div>
+                    <button onclick="sendMail()" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition">发送邮件</button>
+                </div>
+            </section>
+
+            <section id="section-status" class="hidden">
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="bg-white p-6 shadow rounded-lg border-t-4 border-blue-500">
+                        <h3 class="font-bold mb-2">后端接口测试 (/health)</h3>
+                        <pre id="health-log" class="bg-gray-800 text-green-400 p-4 rounded text-xs overflow-x-auto">等待检测...</pre>
+                    </div>
+                    <div class="bg-white p-6 shadow rounded-lg border-t-4 border-purple-500">
+                        <h3 class="font-bold mb-2">最近一次通信回执 (Echo)</h3>
+                        <pre id="echo-log" class="bg-gray-800 text-blue-300 p-4 rounded text-xs overflow-x-auto">无数据</pre>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        function showSection(id) {
+            ['inbox', 'compose', 'status'].forEach(s => {
+                document.getElementById('section-' + s).classList.add('hidden');
+                document.getElementById('nav-' + s).classList.remove('active-nav');
+            });
+            document.getElementById('section-' + id).classList.remove('hidden');
+            document.getElementById('nav-' + id).classList.add('active-nav');
+            document.getElementById('section-title').innerText = 
+                id === 'inbox' ? '收件箱' : (id === 'compose' ? '写邮件' : '系统状态');
+            
+            if(id === 'status') updateStatus();
+        }
+
+        async function updateStatus() {
+            try {
+                const res = await fetch('/health');
+                const data = await res.json();
+                document.getElementById('health-log').innerText = JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('health-log').innerText = "连接失败: " + e;
+            }
+        }
+
+        async function sendMail() {
+            const payload = {
+                to: document.getElementById('mail-to').value,
+                subject: document.getElementById('mail-subject').value,
+                content: document.getElementById('mail-body').value
+            };
+
+            try {
+                // 调用后端的 /echo 接口模拟发送，实际经过 ProxyB -> ProxyA 隧道
+                const res = await fetch('/echo', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                
+                document.getElementById('echo-log').innerText = JSON.stringify(result, null, 2);
+                alert("邮件已送达数字隧道！\n状态码: " + result.method + " 转发成功");
+                showSection('status');
+            } catch (e) {
+                alert("发送失败，请检查隧道连接");
+            }
+        }
+    </script>
+</body>
+</html>
